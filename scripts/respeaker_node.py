@@ -303,15 +303,17 @@ class RespeakerNode(object):
         self.speech_max_duration = rospy.get_param("~speech_max_duration", 7.0)
         self.speech_min_duration = rospy.get_param("~speech_min_duration", 0.1)
         suppress_pyaudio_error = rospy.get_param("~suppress_pyaudio_error", True)
+        self.asr_engine = rospy.get_param("~asr_engine", "google_legacy_single_utterance")
+        rospy.loginfo("ASR Engine is: %s" % self.asr_engine)
         #
         self.respeaker = RespeakerInterface()
         self.speech_audio_buffer = str()
-        self.is_speeching = False
+        self.is_speaking = False
         self.speech_stopped = rospy.Time(0)
         self.prev_is_voice = None
         self.prev_doa = None
         # advertise
-        self.pub_vad = rospy.Publisher("is_speeching", Bool, queue_size=1, latch=True)
+        self.pub_vad = rospy.Publisher("is_speaking", Bool, queue_size=1, latch=True)
         self.pub_doa_raw = rospy.Publisher("sound_direction", Int32, queue_size=1, latch=True)
         self.pub_doa = rospy.Publisher("sound_localization", PoseStamped, queue_size=1, latch=True)
         self.pub_audio = rospy.Publisher("audio", AudioData, queue_size=10)
@@ -368,7 +370,7 @@ class RespeakerNode(object):
 
     def on_audio(self, data):
         self.pub_audio.publish(AudioData(data=data))
-        if self.is_speeching:
+        if self.is_speaking:
             if len(self.speech_audio_buffer) == 0:
                 self.speech_audio_buffer = self.speech_prefetch_buffer
             self.speech_audio_buffer += data
@@ -410,11 +412,11 @@ class RespeakerNode(object):
         if is_voice:
             self.speech_stopped = stamp
         if stamp - self.speech_stopped < rospy.Duration(self.speech_continuation):
-            self.is_speeching = True
-        elif self.is_speeching:
+            self.is_speaking = True
+        elif self.is_speaking:
             buf = self.speech_audio_buffer
             self.speech_audio_buffer = str()
-            self.is_speeching = False
+            self.is_speaking = False
             duration = 8.0 * len(buf) * self.respeaker_audio.bitwidth
             duration = duration / self.respeaker_audio.rate / self.respeaker_audio.bitdepth
             rospy.loginfo("Speech detected for %.3f seconds" % duration)

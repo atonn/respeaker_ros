@@ -19,6 +19,7 @@ class SpeechToText(object):
         self.sample_width = rospy.get_param("~sample_width", 2L)
         # language of STT service
         self.language = rospy.get_param("~language", "en-US")
+        self.asr_engine = rospy.get_param("~asr_engine", "google_legacy_single_utterance")
         # ignore voice input while the robot is speaking
         self.self_cancellation = rospy.get_param("~self_cancellation", True)
         # time to assume as SPEAKING after tts service is finished
@@ -68,11 +69,25 @@ class SpeechToText(object):
             return
         data = SR.AudioData(msg.data, self.sample_rate, self.sample_width)
         try:
-            rospy.loginfo("Waiting for result %d" % len(data.get_raw_data()))
-            result = self.recognizer.recognize_google(
-                data, language=self.language)
-            msg = SpeechRecognitionCandidates(transcript=[result])
-            self.pub_speech.publish(msg)
+            if self.asr_engine == "google_legacy_single_utterance":
+                rospy.loginfo("Waiting for result %d" % len(data.get_raw_data()))
+                result = self.recognizer.recognize_google(
+                    data, language=self.language)
+                msg = SpeechRecognitionCandidates(transcript=[result])
+                rospy.loginfo("Got result: %s" % msg)
+                self.pub_speech.publish(msg)
+
+            elif self.asr_engine == "google_cloud_single_utterance":
+                rospy.loginfo("Waiting for result %d" % len(data.get_raw_data()))
+                result = self.recognizer.recognize_google_cloud(
+                    data, language=self.language)
+                msg = SpeechRecognitionCandidates(transcript=[result])
+                rospy.loginfo("Got result {}: {}".format(len(data.get_raw_data()), msg))
+                self.pub_speech.publish(msg)
+
+            else:
+                rospy.logerr("No valid Recognizer was set (in the roslaunch file): %s" % self.asr_engine)
+
         except SR.UnknownValueError as e:
             rospy.logerr("Failed to recognize: %s" % str(e))
         except SR.RequestError as e:
