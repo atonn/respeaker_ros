@@ -17,7 +17,7 @@ import sys
 import time
 from audio_common_msgs.msg import AudioData
 from geometry_msgs.msg import PoseStamped
-from std_msgs.msg import Bool, Int32, ColorRGBA
+from std_msgs.msg import Bool, Int32, ColorRGBA, String
 from dynamic_reconfigure.server import Server
 try:
     from pixel_ring import usb_pixel_ring_v2
@@ -300,8 +300,8 @@ class RespeakerNode(object):
         self.doa_yaw_offset = rospy.get_param("~doa_yaw_offset", 90.0)
         self.speech_prefetch = rospy.get_param("~speech_prefetch", 0.5)
         self.speech_continuation = rospy.get_param("~speech_continuation", 0.5)
-        self.speech_max_duration = rospy.get_param("~speech_max_duration", 7.0)
-        self.speech_min_duration = rospy.get_param("~speech_min_duration", 0.1)
+        self.speech_max_duration = rospy.get_param("~speech_max_duration", 12.0)
+        self.speech_min_duration = rospy.get_param("~speech_min_duration", 0.3)
         suppress_pyaudio_error = rospy.get_param("~suppress_pyaudio_error", True)
         self.asr_engine = rospy.get_param("~asr_engine", "google_legacy_single_utterance")
         rospy.loginfo("ASR Engine is: %s" % self.asr_engine)
@@ -331,6 +331,9 @@ class RespeakerNode(object):
                                       self.on_timer)
         self.timer_led = None
         self.sub_led = rospy.Subscriber("status_led", ColorRGBA, self.on_status_led)
+        self.pepper_last_started_speaking_timestamp = rospy.Time.now()
+        self.pepper_is_speaking = False
+        self.sub_pepper_speech_status = rospy.Subscriber("pepper_speech_status", String, self.on_pepper_speech_status_change_cb)
 
     def on_shutdown(self):
         try:
@@ -367,9 +370,24 @@ class RespeakerNode(object):
         self.timer_led = rospy.Timer(rospy.Duration(3.0),
                                        lambda e: self.respeaker.set_led_trace(),
                                        oneshot=True)
+    
+    def on_pepper_speech_status_change_cb(self, msg):
+        if msg.data == "on":
+            rospy.loginfo("PEPPER IS SPEAKING!")
+            rospy.loginfo(msg)
+            self.pepper_is_speaking = True
+            self.pepper_last_started_speaking_timestamp = rospy.Time.now()
+        elif msg.data == "off":
+            rospy.loginfo("PEPPER STOPPED SPEAKING!")
+            rospy.loginfo(msg)
+            self.pepper_is_speaking = False
+        else:
+            rospy.logerr("pepper_speech_status rospy subscriber did not understand what it saw:")
+            rospy.logerr(msg)
+
 
     def on_audio(self, data):
-        self.pub_audio.publish(AudioData(data=data))
+        self.pub_audio.publish(AudioData(data=data)) #publish to audio in every case
         if self.is_speaking:
             if len(self.speech_audio_buffer) == 0:
                 self.speech_audio_buffer = self.speech_prefetch_buffer
@@ -408,12 +426,20 @@ class RespeakerNode(object):
             msg.pose.orientation.z = ori[3]
             self.pub_doa.publish(msg)
 
-        # speech audio
-        if is_voice:
+        # get timestamp of "last time mic array detected voice"
+        if is_voice and not self.pepper_is_speaking:
             self.speech_stopped = stamp
-        if stamp - self.speech_stopped < rospy.Duration(self.speech_continuation):
-            self.is_speaking = True
-        elif self.is_speaking:
+
+        #pepper is speaking: we go to cut (correct)
+        #pepper is not speaking: 
+            #we are past the grace period in speaking:
+                #second statement fails, we go to cutting (correct)
+            #we are not past the grace period in speaking:
+                #second statement is true, we don't cut off audio and go on with is_speaking = True (correct)
+        if not self.pepper_is_speaking and (stamp - self.speech_stopped < rospy.Duration(self.speech_continuation)):
+            self.is_speaking = True #grace period "speech_continuation where we just continue 'is speaking'"
+
+        elif self.is_speaking: #otherwise there has been no speech for too long, and we were obviously speaking, so we cut the audio here
             buf = self.speech_audio_buffer
             self.speech_audio_buffer = str()
             self.is_speaking = False
