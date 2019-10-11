@@ -42,6 +42,9 @@ class SpeechToText(object):
 
         self.pub_speech = rospy.Publisher(
             "speech_to_text", SpeechRecognitionCandidates, queue_size=1)
+        #confusing: ros launch file contains: <remap from="audio" to="speech_audio"/>
+        #so actually here we are subscribing to speech_audio, which makes much more sense - if you just read the python code
+        #and do not know about the remapping in the ros launch file, nothing makes sense anymore. hours were lost.
         self.sub_audio = rospy.Subscriber("audio", AudioData, self.audio_cb)
 
     def tts_timer_cb(self, event):

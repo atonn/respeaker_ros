@@ -1,0 +1,13 @@
+<launch>
+  <node name="respeaker_node" pkg="respeaker_ros" type="respeaker_node.py" output="screen">
+    <rosparam>
+      asr_engine: silent
+    </rosparam>
+  </node>
+
+  <node name="static_transformer" pkg="tf" type="static_transform_publisher"
+        args="0 0 0 0 0 0 map respeaker_base 100"/>
+
+  <node name="speech_to_text" pkg="respeaker_ros" type="google_livestream.py" output="screen" />
+
+</launch>
