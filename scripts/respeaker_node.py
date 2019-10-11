@@ -215,6 +215,8 @@ class RespeakerInterface(object):
 
 class RespeakerAudio(object):
     def __init__(self, on_audio, channel=0, suppress_error=True):
+
+
         self.on_audio = on_audio
         with ignore_stderr(enable=suppress_error):
             self.pyaudio = pyaudio.PyAudio()
@@ -307,26 +309,33 @@ class RespeakerNode(object):
         rospy.loginfo("ASR Engine is: %s" % self.asr_engine)
         #
         self.respeaker = RespeakerInterface()
-        self.speech_audio_buffer = str()
-        self.is_speaking = False
-        self.speech_stopped = rospy.Time(0)
-        self.prev_is_voice = None
         self.prev_doa = None
+        self.prev_is_voice = None
+
+        if self.asr_engine != "silent":
+            self.speech_audio_buffer = str()
+            self.is_speaking = False
+            self.speech_stopped = rospy.Time(0)
+
+            self.pub_audio = rospy.Publisher("audio", AudioData, queue_size=10)
+            self.pub_speech_audio = rospy.Publisher("speech_audio", AudioData, queue_size=10)
         # advertise
-        self.pub_vad = rospy.Publisher("is_speaking", Bool, queue_size=1, latch=True)
+        self.pub_vad = rospy.Publisher("is_speaking", Bool, queue_size=1, latch=True)  
         self.pub_doa_raw = rospy.Publisher("sound_direction", Int32, queue_size=1, latch=True)
         self.pub_doa = rospy.Publisher("sound_localization", PoseStamped, queue_size=1, latch=True)
-        self.pub_audio = rospy.Publisher("audio", AudioData, queue_size=10)
-        self.pub_speech_audio = rospy.Publisher("speech_audio", AudioData, queue_size=10)
+        
         # init config
         self.config = None
         self.dyn_srv = Server(RespeakerConfig, self.on_config)
         # start
-        self.respeaker_audio = RespeakerAudio(self.on_audio, suppress_error=suppress_pyaudio_error)
-        self.speech_prefetch_bytes = int(
-            self.speech_prefetch * self.respeaker_audio.rate * self.respeaker_audio.bitdepth / 8.0)
-        self.speech_prefetch_buffer = str()
-        self.respeaker_audio.start()
+
+        if self.asr_engine != "silent":
+            self.respeaker_audio = RespeakerAudio(self.on_audio, suppress_error=suppress_pyaudio_error)
+            self.speech_prefetch_bytes = int(
+                self.speech_prefetch * self.respeaker_audio.rate * self.respeaker_audio.bitdepth / 8.0)
+            self.speech_prefetch_buffer = str()
+            self.respeaker_audio.start()
+
         self.info_timer = rospy.Timer(rospy.Duration(1.0 / self.update_rate),
                                       self.on_timer)
         self.timer_led = None
@@ -426,29 +435,31 @@ class RespeakerNode(object):
             msg.pose.orientation.z = ori[3]
             self.pub_doa.publish(msg)
 
-        # get timestamp of "last time mic array detected voice"
-        if is_voice and not self.pepper_is_speaking:
-            self.speech_stopped = stamp
+        if self.asr_engine != "silent":
+            #actual cutting of the "speech" only audio for sending to asr service
+            # get timestamp of "last time mic array detected voice"
+            if is_voice and not self.pepper_is_speaking:
+                self.speech_stopped = stamp
 
-        #pepper is speaking: we go to cut (correct)
-        #pepper is not speaking: 
-            #we are past the grace period in speaking:
-                #second statement fails, we go to cutting (correct)
-            #we are not past the grace period in speaking:
-                #second statement is true, we don't cut off audio and go on with is_speaking = True (correct)
-        if not self.pepper_is_speaking and (stamp - self.speech_stopped < rospy.Duration(self.speech_continuation)):
-            self.is_speaking = True #grace period "speech_continuation where we just continue 'is speaking'"
+            #pepper is speaking: we go to cut (correct)
+            #pepper is not speaking: 
+                #we are past the grace period in speaking:
+                    #second statement fails, we go to cutting (correct)
+                #we are not past the grace period in speaking:
+                    #second statement is true, we don't cut off audio and go on with is_speaking = True (correct)
+            if not self.pepper_is_speaking and (stamp - self.speech_stopped < rospy.Duration(self.speech_continuation)):
+                self.is_speaking = True #grace period "speech_continuation where we just continue 'is speaking'"
 
-        elif self.is_speaking: #otherwise there has been no speech for too long, and we were obviously speaking, so we cut the audio here
-            buf = self.speech_audio_buffer
-            self.speech_audio_buffer = str()
-            self.is_speaking = False
-            duration = 8.0 * len(buf) * self.respeaker_audio.bitwidth
-            duration = duration / self.respeaker_audio.rate / self.respeaker_audio.bitdepth
-            rospy.loginfo("Speech detected for %.3f seconds" % duration)
-            if self.speech_min_duration <= duration < self.speech_max_duration:
+            elif self.is_speaking: #otherwise there has been no speech for too long, and we were obviously speaking, so we cut the audio here
+                buf = self.speech_audio_buffer
+                self.speech_audio_buffer = str()
+                self.is_speaking = False
+                duration = 8.0 * len(buf) * self.respeaker_audio.bitwidth
+                duration = duration / self.respeaker_audio.rate / self.respeaker_audio.bitdepth
+                rospy.loginfo("Speech detected for %.3f seconds" % duration)
+                if self.speech_min_duration <= duration < self.speech_max_duration:
 
-                self.pub_speech_audio.publish(AudioData(data=buf))
+                    self.pub_speech_audio.publish(AudioData(data=buf))
 
 
 if __name__ == '__main__':
