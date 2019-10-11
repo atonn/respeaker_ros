@@ -192,9 +192,9 @@ def listen_print_loop(responses):
 
         else:
             print(transcript + overwrite_chars)
-            print(type(result))
-            print(result.alternatives[0].transcript.join(""))
-            msg = SpeechRecognitionCandidates(transcript=transcript + overwrite_chars)
+            #print(type(result))
+            #print(result.alternatives[0].transcript.join(""))
+            msg = SpeechRecognitionCandidates(transcript=transcript) #XXX stringify
             pub_speech.publish(msg)
             print(response)
             # Exit recognition if any of the transcribed phrases could be
@@ -215,7 +215,6 @@ def main():
     # See http://g.co/cloud/speech/docs/languages
     # for a list of supported languages.
     language_code = 'en-US'  # a BCP-47 language tag
-    #CHUNK = 1024
 
     client = speech.SpeechClient()
     config = types.RecognitionConfig(
@@ -232,15 +231,18 @@ def main():
     #cheap way to dodge google's "exceeded 300 seconds of audio in one go"
     #better way: XXX https://github.com/GoogleCloudPlatform/python-docs-samples/blob/master/speech/microphone/transcribe_streaming_infinite.py
     while True:
-        with MicrophoneStream(RATE, CHUNK) as stream:
-            audio_generator = stream.generator()
-            requests = (types.StreamingRecognizeRequest(audio_content=content)
-                        for content in audio_generator)
+        try:
+            with MicrophoneStream(RATE, CHUNK) as stream:
+                audio_generator = stream.generator()
+                requests = (types.StreamingRecognizeRequest(audio_content=content)
+                            for content in audio_generator)
 
-            responses = client.streaming_recognize(streaming_config, requests)
+                responses = client.streaming_recognize(streaming_config, requests)
 
-            # Now, put the transcription responses to use.
-            listen_print_loop(responses)
+                # Now, put the transcription responses to use.
+                listen_print_loop(responses)
+        except Exception as e:
+            print(e)
         time.sleep(5)
 
 
