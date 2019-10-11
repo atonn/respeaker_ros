@@ -6,11 +6,12 @@ import actionlib
 import rospy
 import speech_recognition as SR
 
+
 from actionlib_msgs.msg import GoalStatus, GoalStatusArray
 from audio_common_msgs.msg import AudioData
 from sound_play.msg import SoundRequest, SoundRequestAction, SoundRequestGoal
 from speech_recognition_msgs.msg import SpeechRecognitionCandidates
-
+from speech_recognition_extended import PepperProjectRecognizer
 
 class SpeechToText(object):
     def __init__(self):
@@ -26,7 +27,7 @@ class SpeechToText(object):
         self.tts_tolerance = rospy.Duration.from_sec(
             rospy.get_param("~tts_tolerance", 1.0))
 
-        self.recognizer = SR.Recognizer()
+        self.recognizer = PepperProjectRecognizer() #SR.Recognizer()
 
         self.tts_action = None
         self.last_tts = None
@@ -84,6 +85,16 @@ class SpeechToText(object):
                 rospy.loginfo("Waiting for result %d" % len(data.get_raw_data()))
                 result = self.recognizer.recognize_google_cloud(
                     data, language=self.language)
+                msg = SpeechRecognitionCandidates(transcript=[result])
+                rospy.loginfo("Got result {}: {}".format(len(data.get_raw_data()), msg))
+                self.pub_speech.publish(msg)
+
+            elif self.asr_engine == "ibm_single_utterance":
+                rospy.loginfo("Waiting for result %d" % len(data.get_raw_data()))
+                result = self.recognizer.recognize_ibm_single_utterance(
+                    data, 
+                    key = "DO NOT UPLOAD YOUR API KEYS TO GITHUB",
+                    language=self.language)
                 msg = SpeechRecognitionCandidates(transcript=[result])
                 rospy.loginfo("Got result {}: {}".format(len(data.get_raw_data()), msg))
                 self.pub_speech.publish(msg)

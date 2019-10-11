@@ -17,10 +17,13 @@ import rospy
 import numpy as np
 from speech_recognition_msgs.msg import SpeechRecognitionCandidates
 
+from std_msgs.msg import Bool, Int32, String
+
 # Audio recording parameters
 RATE = 16000
 CHUNK = int(RATE / 10)  # 100ms
 pub_speech = None #dummy global variable for publisher
+pepper_is_speaking = False #global variable
 
 class MicrophoneStream(object):
     VENDOR_ID = 0x2886
@@ -115,11 +118,16 @@ class MicrophoneStream(object):
 
     def _fill_buffer(self, in_data, frame_count, time_info, status_flags):
         """Continuously collect data from the audio stream, into the buffer."""
+        global pepper_is_speaking
         data = np.fromstring(in_data, dtype=np.int16)
         chunk_per_channel = int( len(data) / self.channels )
         data = np.reshape(data, (chunk_per_channel, self.channels))
         chan_data = data[:, self.channel]
         #self._buff.put(in_data)
+        if pepper_is_speaking:
+            chan_data.fill(0) ##fill our stream with zeros (silence) if pepper is talking
+        #print(chan_data)
+        #print(type(chan_data))
         self._buff.put(chan_data.tostring())
         return None, pyaudio.paContinue
 
@@ -206,11 +214,28 @@ def listen_print_loop(responses):
             num_chars_printed = 0
 
 
+def on_pepper_speech_status_change_cb(msg):
+    global pepper_is_speaking
+    if msg.data == "on":
+        rospy.loginfo("PEPPER IS SPEAKING!")
+        rospy.loginfo(msg)
+        pepper_is_speaking = True
+    elif msg.data == "off":
+        rospy.loginfo("PEPPER STOPPED SPEAKING!")
+        rospy.loginfo(msg)
+        pepper_is_speaking = False
+    else:
+        rospy.logerr("pepper_speech_status rospy subscriber did not understand what it saw:")
+        rospy.logerr(msg)
+
 def main():
     rospy.init_node("speech_to_text")
     global pub_speech
     pub_speech = rospy.Publisher(
             "speech_to_text", SpeechRecognitionCandidates, queue_size=1)
+
+    global pepper_is_speaking
+    sub_pepper_speech_status = rospy.Subscriber("pepper_speech_status", String, on_pepper_speech_status_change_cb)
 
     # See http://g.co/cloud/speech/docs/languages
     # for a list of supported languages.
@@ -232,18 +257,19 @@ def main():
     #better way: XXX https://github.com/GoogleCloudPlatform/python-docs-samples/blob/master/speech/microphone/transcribe_streaming_infinite.py
     while True:
         try:
-            with MicrophoneStream(RATE, CHUNK) as stream:
-                audio_generator = stream.generator()
-                requests = (types.StreamingRecognizeRequest(audio_content=content)
-                            for content in audio_generator)
+            if not pepper_is_speaking:
+                with MicrophoneStream(RATE, CHUNK) as stream:
+                    audio_generator = stream.generator()
+                    requests = (types.StreamingRecognizeRequest(audio_content=content)
+                                for content in audio_generator)
 
-                responses = client.streaming_recognize(streaming_config, requests)
+                    responses = client.streaming_recognize(streaming_config, requests)
 
-                # Now, put the transcription responses to use.
-                listen_print_loop(responses)
+                    # Now, put the transcription responses to use.
+                    listen_print_loop(responses)
         except Exception as e:
             print(e)
-        time.sleep(5)
+            time.sleep(5)
 
 
 if __name__ == '__main__':
