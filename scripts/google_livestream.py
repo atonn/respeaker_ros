@@ -15,7 +15,7 @@ import usb.core
 import usb.util
 import rospy
 import numpy as np
-from speech_recognition_msgs.msg import SpeechRecognitionCandidates
+#from speech_recognition_msgs.msg import SpeechRecognitionCandidates
 
 from std_msgs.msg import Bool, Int32, String
 
@@ -202,9 +202,10 @@ def listen_print_loop(responses):
             print(transcript + overwrite_chars)
             #print(type(result))
             #print(result.alternatives[0].transcript.join(""))
-            msg = SpeechRecognitionCandidates(transcript=transcript) #XXX stringify
+            #msg = SpeechRecognitionCandidates(transcript=transcript) #XXX stringify
+            msg = String(str(transcript))
             pub_speech.publish(msg)
-            print(response)
+            #print(response)
             # Exit recognition if any of the transcribed phrases could be
             # one of our keywords.
             #if re.search(r'\b(exit|quit)\b', transcript, re.I):
@@ -216,14 +217,16 @@ def listen_print_loop(responses):
 
 def on_pepper_speech_status_change_cb(msg):
     global pepper_is_speaking
-    if msg.data == "on":
+    if msg.data == "enqueued":
         rospy.loginfo("PEPPER IS SPEAKING!")
         rospy.loginfo(msg)
         pepper_is_speaking = True
-    elif msg.data == "off":
+    elif msg.data == "done":
         rospy.loginfo("PEPPER STOPPED SPEAKING!")
         rospy.loginfo(msg)
         pepper_is_speaking = False
+    elif msg.data == "started":
+        pass
     else:
         rospy.logerr("pepper_speech_status rospy subscriber did not understand what it saw:")
         rospy.logerr(msg)
@@ -232,7 +235,7 @@ def main():
     rospy.init_node("speech_to_text")
     global pub_speech
     pub_speech = rospy.Publisher(
-            "speech_to_text", SpeechRecognitionCandidates, queue_size=1)
+            "recognized_speech", String, queue_size=1)
 
     global pepper_is_speaking
     sub_pepper_speech_status = rospy.Subscriber("pepper_speech_status", String, on_pepper_speech_status_change_cb)

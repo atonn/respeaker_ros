@@ -5,7 +5,7 @@
 import actionlib
 import rospy
 import speech_recognition as SR
-
+import os
 
 from actionlib_msgs.msg import GoalStatus, GoalStatusArray
 from audio_common_msgs.msg import AudioData
@@ -93,8 +93,10 @@ class SpeechToText(object):
                 rospy.loginfo("Waiting for result %d" % len(data.get_raw_data()))
                 result = self.recognizer.recognize_ibm_single_utterance(
                     data, 
-                    key = "DO NOT UPLOAD YOUR API KEYS TO GITHUB",
-                    language=self.language)
+                    key=os.environ['IBM_API'],
+                    language=self.language
+                    )
+                    #url=os.environ['IBM_URL']) #do not forget /v1/recognize ending
                 msg = SpeechRecognitionCandidates(transcript=[result])
                 rospy.loginfo("Got result {}: {}".format(len(data.get_raw_data()), msg))
                 self.pub_speech.publish(msg)

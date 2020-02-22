@@ -381,15 +381,17 @@ class RespeakerNode(object):
                                        oneshot=True)
     
     def on_pepper_speech_status_change_cb(self, msg):
-        if msg.data == "on":
+        if msg.data == "enqueued":
             rospy.loginfo("PEPPER IS SPEAKING!")
             rospy.loginfo(msg)
             self.pepper_is_speaking = True
             self.pepper_last_started_speaking_timestamp = rospy.Time.now()
-        elif msg.data == "off":
+        elif msg.data == "done":
             rospy.loginfo("PEPPER STOPPED SPEAKING!")
             rospy.loginfo(msg)
             self.pepper_is_speaking = False
+        elif msg.data == "started":
+            pass
         else:
             rospy.logerr("pepper_speech_status rospy subscriber did not understand what it saw:")
             rospy.logerr(msg)
